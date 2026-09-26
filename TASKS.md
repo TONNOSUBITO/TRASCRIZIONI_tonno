@@ -1,0 +1,26 @@
+# TASKS
+
+## Obiettivo
+Bot Telegram (@Trascrizioni_toan_bot): mandi un link o un audio → ricevi un file `.md` con titolo, riassunto e trascrizione. Funziona anche a PC spento.
+
+## Checklist
+- [x] Bot creato su BotFather, token verificato (`getMe` ok)
+- [x] Scelto hosting: Vercel (già collegato), funzione Python serverless con webhook Telegram
+- [x] Trascrizione: Whisper via Vercel AI Gateway (autenticazione OIDC, nessuna API key extra)
+- [x] Titolo + riassunto: LLM via AI Gateway (claude-haiku-4.5)
+- [x] Download link: yt-dlp (Instagram, TikTok, YouTube, ecc.)
+- [x] Input vocali/audio/video inviati direttamente su Telegram
+- [x] Test locale: download Instagram del reel di prova ok, trascrizione ok
+- [ ] Deploy su Vercel + variabili d'ambiente
+- [ ] Webhook Telegram impostato con secret
+- [ ] Bot limitato alla tua chat (ALLOWED_CHAT_IDS)
+- [ ] Test end-to-end con il reel Instagram di prova, fatto dal server Vercel
+- [ ] Archiviazione esterna oltre a Telegram (Drive/GitHub): da decidere
+
+## Scoperte
+- Script Python "vecchio" non presente nelle repo: repo vuote al momento dell'inizio.
+- Instagram: con `curl_cffi` (impersonation) risponde 429 da IP cloud; senza impersonation funziona → patch in `download_url`.
+- TikTok: richiede `curl_cffi` (senza, errore "Unexpected response").
+- YouTube: da IP cloud chiede "Sign in to confirm you're not a bot" → servono cookie (`YT_COOKIES`, formato Netscape) oppure non funzionerà dal server.
+- Limite Whisper 25 MB per file (~1h di audio a bassa qualità). Nessun ffmpeg sul server, quindi niente spezzettamento dei file lunghi.
+- File da Telegram: limite 20 MB per il download dal bot.
