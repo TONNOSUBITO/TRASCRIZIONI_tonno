@@ -11,8 +11,8 @@ Bot Telegram (@Trascrizioni_toan_bot): mandi un link o un audio → ricevi un fi
 - [x] Download link: yt-dlp (Instagram, TikTok, YouTube, ecc.)
 - [x] Input vocali/audio/video inviati direttamente su Telegram
 - [x] Test locale: download Instagram del reel di prova ok, trascrizione ok
-- [ ] Deploy su Vercel + variabili d'ambiente
-- [ ] Webhook Telegram impostato con secret
+- [x] Deploy su Vercel (progetto `trascrizioni-bot`, da GitHub) + variabili d'ambiente
+- [x] Webhook Telegram impostato con secret → https://trascrizioni-bot-tonno-team.vercel.app/api/index
 - [ ] Bot limitato alla tua chat (ALLOWED_CHAT_IDS)
 - [ ] Test end-to-end con il reel Instagram di prova, fatto dal server Vercel
 - [ ] Archiviazione esterna oltre a Telegram (Drive/GitHub): da decidere
