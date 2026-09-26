@@ -168,7 +168,8 @@ async def app(scope, receive, send):
                     raise RuntimeError
                 wait_until(job)
             except Exception:
-                await job  # nessun contesto background: elabora prima di rispondere
+                print("wait_until non disponibile: elaborazione sincrona")
+                await job
         elif msg:
             print("chat non autorizzata:", msg["chat"]["id"])
     await send({"type": "http.response.start", "status": 200 if ok else 403,
