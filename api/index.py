@@ -13,6 +13,8 @@ import base64
 
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 SECRET = os.environ.get("WEBHOOK_SECRET", "")
+DRIVE_URL = os.environ.get("DRIVE_URL", "")  # web app Apps Script (drive/Code.gs)
+DRIVE_KEY = os.environ.get("DRIVE_KEY", "")
 ALLOWED = {c for c in os.environ.get("ALLOWED_CHAT_IDS", "").split(",") if c}
 TG = f"https://api.telegram.org/bot{TOKEN}"
 GATEWAY = "https://ai-gateway.vercel.sh"
@@ -139,6 +141,12 @@ def process(msg, oidc):
         md = build_md(title, summary, text, source, lang, secs)
         name = f"{dt.date.today().isoformat()}-{slug(title)}.md"
         tg_document(chat, name, md, f"📝 {title}"[:1000])
+        if DRIVE_URL:
+            try:
+                http(DRIVE_URL, json.dumps({"key": DRIVE_KEY, "name": name, "content": md}).encode(),
+                     {"Content-Type": "application/json"}, timeout=60)
+            except Exception as e:
+                tg("sendMessage", chat_id=chat, text=f"⚠️ Non salvato su Drive: {str(e)[:300]}")
         tg("deleteMessage", chat_id=chat, message_id=status)
     except Exception as e:
         traceback.print_exc()

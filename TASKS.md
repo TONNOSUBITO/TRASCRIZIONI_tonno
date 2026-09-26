@@ -15,7 +15,11 @@ Bot Telegram (@Trascrizioni_toan_bot): mandi un link o un audio → ricevi un fi
 - [x] Webhook Telegram impostato con secret → https://trascrizioni-bot-tonno-team.vercel.app/api/index
 - [ ] Bot limitato alla tua chat (ALLOWED_CHAT_IDS)
 - [ ] Test end-to-end con il reel Instagram di prova, fatto dal server Vercel
-- [ ] Archiviazione esterna oltre a Telegram (Drive/GitHub): da decidere
+- [x] Salvataggio su Google Drive: codice bot + script `drive/Code.gs` (Apps Script, niente OAuth)
+- [ ] Tu: pubblicare lo script Apps Script e mandarmi l'URL → lo metto in `DRIVE_URL` su Vercel
+- [ ] Test salvataggio su Drive
+- [ ] Comando rapido iPhone: registra → sendDocument alla tua chat → POST del messaggio al webhook (nessun codice server in più)
+- [ ] Test del comando rapido con un memo vero
 
 ## Scoperte
 - Script Python "vecchio" non presente nelle repo: repo vuote al momento dell'inizio.
@@ -24,3 +28,5 @@ Bot Telegram (@Trascrizioni_toan_bot): mandi un link o un audio → ricevi un fi
 - YouTube: da IP cloud chiede "Sign in to confirm you're not a bot" → servono cookie (`YT_COOKIES`, formato Netscape) oppure non funzionerà dal server.
 - Limite Whisper 25 MB per file (~1h di audio a bassa qualità). Nessun ffmpeg sul server, quindi niente spezzettamento dei file lunghi.
 - File da Telegram: limite 20 MB per il download dal bot.
+- Drive: con un service account i file non si possono creare su un Drive personale (serve quota) → si usa un web app Apps Script che gira col tuo account.
+- Controllo periodico su Drive scartato: su Vercel Hobby i cron girano al massimo una volta al giorno. L'invio diretto dal comando rapido è immediato.
