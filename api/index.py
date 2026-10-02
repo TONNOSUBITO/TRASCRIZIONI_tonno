@@ -80,7 +80,9 @@ def transcribe(path, oidc):
     ext = path.rsplit(".", 1)[-1].lower()
     body = json.dumps({"audio": base64.b64encode(data).decode(), "mediaType": MIME.get(ext, "audio/mpeg")})
     r = json.loads(http(f"{GATEWAY}/v4/ai/transcription-model", body.encode(), {
-        "Authorization": f"Bearer {oidc}", "ai-model-id": STT_MODEL, "Content-Type": "application/json"}))
+        "Authorization": f"Bearer {oidc}", "ai-model-id": STT_MODEL, "Content-Type": "application/json",
+        "ai-gateway-protocol-version": "0.0.1", "ai-gateway-auth-method": "oidc",
+        "ai-transcription-model-specification-version": "4"}))
     return r["text"].strip(), r.get("language"), r.get("durationInSeconds")
 
 
