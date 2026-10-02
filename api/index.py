@@ -10,7 +10,6 @@ import traceback
 import urllib.error
 import urllib.request
 import uuid
-import base64
 
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 SECRET = os.environ.get("WEBHOOK_SECRET", "")
@@ -18,17 +17,15 @@ DRIVE_URL = os.environ.get("DRIVE_URL", "")  # web app Apps Script (drive/Code.g
 DRIVE_KEY = os.environ.get("DRIVE_KEY", "")
 ALLOWED = {c for c in os.environ.get("ALLOWED_CHAT_IDS", "").split(",") if c}
 TG = f"https://api.telegram.org/bot{TOKEN}"
-GATEWAY = "https://ai-gateway.vercel.sh"
-STT_MODEL = "openai/whisper-1"
-LLM_MODEL = "anthropic/claude-haiku-4.5"
-MAX_AUDIO = 25 * 1024 * 1024  # limite Whisper
-MIME = {"m4a": "audio/mp4", "mp4": "video/mp4", "webm": "audio/webm", "ogg": "audio/ogg",
-        "oga": "audio/ogg", "opus": "audio/ogg", "mp3": "audio/mpeg", "wav": "audio/wav",
-        "mov": "video/quicktime", "aac": "audio/aac", "flac": "audio/flac"}
+GROQ = "https://api.groq.com/openai/v1"
+GROQ_AUTH = {"Authorization": f"Bearer {os.environ.get('GROQ_API_KEY', '')}"}
+STT_MODEL = "whisper-large-v3"
+LLM_MODEL = "openai/gpt-oss-120b"
+MAX_AUDIO = 25 * 1024 * 1024  # limite file Groq (piano gratuito)
 
 
 def http(url, data=None, headers=None, timeout=240):
-    req = urllib.request.Request(url, data=data, headers=headers or {})
+    req = urllib.request.Request(url, data=data, headers={"User-Agent": "trascrizioni-bot/1.0", **(headers or {})})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.read()
@@ -41,14 +38,16 @@ def tg(method, **params):
     return json.loads(http(f"{TG}/{method}", body, {"Content-Type": "application/json"}))
 
 
-def tg_document(chat_id, name, content, caption):
+def multipart(url, fields, file_field, filename, content, headers=None):
     b = uuid.uuid4().hex
-    parts = [f'--{b}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n{chat_id}\r\n',
-             f'--{b}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n{caption}\r\n',
-             f'--{b}\r\nContent-Disposition: form-data; name="document"; filename="{name}"\r\n'
-             "Content-Type: text/markdown\r\n\r\n"]
-    body = "".join(parts).encode() + content.encode() + f"\r\n--{b}--\r\n".encode()
-    http(f"{TG}/sendDocument", body, {"Content-Type": f"multipart/form-data; boundary={b}"})
+    head = "".join(f'--{b}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n' for k, v in fields.items())
+    head += f'--{b}\r\nContent-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\n\r\n'
+    body = head.encode() + content + f"\r\n--{b}--\r\n".encode()
+    return http(url, body, {**(headers or {}), "Content-Type": f"multipart/form-data; boundary={b}"})
+
+
+def tg_document(chat_id, name, content, caption):
+    multipart(f"{TG}/sendDocument", {"chat_id": chat_id, "caption": caption}, "document", name, content.encode())
 
 
 def download_url(url, tmp):
@@ -73,20 +72,18 @@ def download_tg_file(file_id, tmp):
     return dest
 
 
-def transcribe(path, oidc):
+def transcribe(path):
     data = open(path, "rb").read()
     if len(data) > MAX_AUDIO:
         raise ValueError("Audio oltre 25 MB: troppo lungo per una sola trascrizione.")
     ext = path.rsplit(".", 1)[-1].lower()
-    body = json.dumps({"audio": base64.b64encode(data).decode(), "mediaType": MIME.get(ext, "audio/mpeg")})
-    r = json.loads(http(f"{GATEWAY}/v4/ai/transcription-model", body.encode(), {
-        "Authorization": f"Bearer {oidc}", "ai-model-id": STT_MODEL, "Content-Type": "application/json",
-        "ai-gateway-protocol-version": "0.0.1", "ai-gateway-auth-method": "oidc",
-        "ai-transcription-model-specification-version": "4"}))
-    return r["text"].strip(), r.get("language"), r.get("durationInSeconds")
+    ext = {"oga": "ogg", "opus": "ogg", "mov": "mp4"}.get(ext, ext)
+    r = json.loads(multipart(f"{GROQ}/audio/transcriptions", {"model": STT_MODEL, "response_format": "verbose_json"},
+                             "file", f"audio.{ext}", data, GROQ_AUTH))
+    return r["text"].strip(), r.get("language"), r.get("duration")
 
 
-def summarize(text, oidc, hint):
+def summarize(text, hint):
     prompt = ("Ti do la trascrizione di un video. Rispondi SOLO con un JSON "
               '{"titolo": "...", "riassunto": "..."} in italiano. '
               "titolo: max 8 parole, descrive il contenuto. "
@@ -94,8 +91,7 @@ def summarize(text, oidc, hint):
               "utile per studiare.\n"
               f"Titolo originale (può essere vuoto): {hint}\n\nTRASCRIZIONE:\n{text}")
     body = json.dumps({"model": LLM_MODEL, "messages": [{"role": "user", "content": prompt}]})
-    r = json.loads(http(f"{GATEWAY}/v1/chat/completions", body.encode(), {
-        "Authorization": f"Bearer {oidc}", "Content-Type": "application/json"}))
+    r = json.loads(http(f"{GROQ}/chat/completions", body.encode(), {**GROQ_AUTH, "Content-Type": "application/json"}))
     out = r["choices"][0]["message"]["content"]
     m = re.search(r"\{.*\}", out, re.S)
     try:
@@ -124,7 +120,7 @@ def slug(s):
     return re.sub(r"[\s_-]+", "-", s)[:60] or "trascrizione"
 
 
-def process(msg, oidc):
+def process(msg):
     chat = msg["chat"]["id"]
     status = tg("sendMessage", chat_id=chat, text="⏳ Trascrivo…",
                 reply_to_message_id=msg["message_id"])["result"]["message_id"]
@@ -142,8 +138,8 @@ def process(msg, oidc):
                 tg("editMessageText", chat_id=chat, message_id=status,
                    text="Mandami un link (YouTube, Instagram, TikTok…) o un audio/vocale.")
                 return
-            text, lang, secs = transcribe(path, oidc)
-        title, summary = summarize(text, oidc, hint)
+            text, lang, secs = transcribe(path)
+        title, summary = summarize(text, hint)
         md = build_md(title, summary, text, source, lang, secs)
         name = f"{dt.date.today().isoformat()}-{slug(title)}.md"
         tg_document(chat, name, md, f"📝 {title}"[:1000])
@@ -159,18 +155,18 @@ def process(msg, oidc):
         tg("editMessageText", chat_id=chat, message_id=status, text=f"❌ Errore: {str(e)[:500]}")
 
 
-def diag(url, oidc):
+def diag(url):
     """Esegue la pipeline senza Telegram e riporta ogni passo (per i test)."""
-    out = {"oidc": bool(oidc)}
+    out = {}
     try:
         from vercel.cache.context import get_context
         out["wait_until"] = get_context().wait_until is not None
         with tempfile.TemporaryDirectory() as tmp:
             path, hint = download_url(url, tmp)
             out["download"] = [path, os.path.getsize(path), hint]
-            text, lang, secs = transcribe(path, oidc)
+            text, lang, secs = transcribe(path)
             out["transcribe"] = [text[:200], lang, secs]
-        out["summary"] = summarize(text, oidc, hint)
+        out["summary"] = summarize(text, hint)
     except Exception:
         out["error"] = traceback.format_exc()[-1500:]
     return out
@@ -188,9 +184,8 @@ async def app(scope, receive, send):
             break
     ok = scope["method"] == "POST" and (not SECRET or headers.get("x-telegram-bot-api-secret-token") == SECRET)
     data = json.loads(body or b"{}") if ok else {}
-    oidc = headers.get("x-vercel-oidc-token") or os.environ.get("VERCEL_OIDC_TOKEN", "")
     if ok and "diag" in data:
-        out = json.dumps(await asyncio.to_thread(diag, data["diag"], oidc), ensure_ascii=False).encode()
+        out = json.dumps(await asyncio.to_thread(diag, data["diag"]), ensure_ascii=False).encode()
         await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
         await send({"type": "http.response.body", "body": out})
         return
@@ -198,7 +193,7 @@ async def app(scope, receive, send):
         msg = data.get("message")
         if msg and (not ALLOWED or str(msg["chat"]["id"]) in ALLOWED):
             print("messaggio da chat", msg["chat"]["id"])
-            job = asyncio.to_thread(process, msg, oidc)
+            job = asyncio.to_thread(process, msg)
             try:
                 from vercel.functions import wait_until
                 from vercel.cache.context import get_context
