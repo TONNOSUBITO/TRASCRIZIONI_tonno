@@ -6,6 +6,7 @@ import json
 import os
 import re
 import tempfile
+import time
 import traceback
 import urllib.error
 import urllib.request
@@ -26,11 +27,15 @@ MAX_AUDIO = 25 * 1024 * 1024  # limite file Groq (piano gratuito)
 
 def http(url, data=None, headers=None, timeout=240):
     req = urllib.request.Request(url, data=data, headers={"User-Agent": "trascrizioni-bot/1.0", **(headers or {})})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.read()
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"HTTP {e.code} da {url.split('/bot')[0]}: {e.read()[:400].decode(errors='replace')}") from None
+    for _ in range(6):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if e.code != 429:  # limite al minuto: si aspetta e si riprova
+                raise RuntimeError(f"HTTP {e.code} da {url.split('/bot')[0]}: {e.read()[:400].decode(errors='replace')}") from None
+            time.sleep(min(float(e.headers.get("retry-after") or 10), 60))
+    raise RuntimeError(f"Limite di richieste superato su {url.split('/bot')[0]}")
 
 
 def tg(method, **params):
@@ -83,16 +88,29 @@ def transcribe(path):
     return r["text"].strip(), r.get("language"), r.get("duration")
 
 
+def chat(prompt):
+    body = json.dumps({"model": LLM_MODEL, "reasoning_effort": "low",
+                       "messages": [{"role": "user", "content": prompt}]})
+    r = json.loads(http(f"{GROQ}/chat/completions", body.encode(), {**GROQ_AUTH, "Content-Type": "application/json"}))
+    return r["choices"][0]["message"]["content"]
+
+
+CHUNK = 14000  # caratteri (~3500 token): sta nel limite gratuito di 8000 token/minuto
+
+
 def summarize(text, hint):
+    if len(text) > CHUNK:  # testi lunghi: prima i punti chiave a pezzi, poi il riassunto finale
+        notes = "\n".join(chat("Estrai in italiano i punti chiave (elenco puntato, niente introduzioni) "
+                               f"da questa parte di trascrizione:\n\n{text[i:i + CHUNK]}")
+                          for i in range(0, len(text), CHUNK))
+        text = f"(punti chiave estratti dalla trascrizione completa)\n{notes}"
     prompt = ("Ti do la trascrizione di un video. Rispondi SOLO con un JSON "
               '{"titolo": "...", "riassunto": "..."} in italiano. '
               "titolo: max 8 parole, descrive il contenuto. "
               "riassunto: markdown, 1 frase di sintesi e poi i punti chiave in elenco puntato, "
               "utile per studiare.\n"
               f"Titolo originale (può essere vuoto): {hint}\n\nTRASCRIZIONE:\n{text}")
-    body = json.dumps({"model": LLM_MODEL, "messages": [{"role": "user", "content": prompt}]})
-    r = json.loads(http(f"{GROQ}/chat/completions", body.encode(), {**GROQ_AUTH, "Content-Type": "application/json"}))
-    out = r["choices"][0]["message"]["content"]
+    out = chat(prompt)
     m = re.search(r"\{.*\}", out, re.S)
     try:
         j = json.loads(m.group(0))

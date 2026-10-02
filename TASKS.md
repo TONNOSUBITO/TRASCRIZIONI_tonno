@@ -8,7 +8,9 @@ Bot Telegram (@Trascrizioni_toan_bot): mandi un link o un audio → ricevi un fi
 - [x] Scelto hosting: Vercel (già collegato), funzione Python serverless con webhook Telegram
 - [x] ~~Trascrizione via Vercel AI Gateway~~ → bloccato: il Gateway richiede una carta di credito sull'account
 - [x] Passaggio a Groq: Whisper large-v3 + riassunto (gpt-oss-120b), codice pronto
-- [ ] Tu: chiave Groq → la metto in `GROQ_API_KEY` su Vercel
+- [x] Chiave Groq in `GROQ_API_KEY` su Vercel
+- [x] Test pipeline dal server (reel di prova): download + trascrizione + titolo/riassunto OK
+- [x] Testi lunghi: riassunto a pezzi + attesa automatica sui limiti 429 (testato su 55k caratteri ≈ 1h: 100 s)
 - [x] Download link: yt-dlp (Instagram, TikTok, YouTube, ecc.)
 - [x] Input vocali/audio/video inviati direttamente su Telegram
 - [x] Test locale: download Instagram del reel di prova ok, trascrizione ok
@@ -34,3 +36,4 @@ Bot Telegram (@Trascrizioni_toan_bot): mandi un link o un audio → ricevi un fi
 - AI Gateway Vercel: serviva un header `ai-gateway-protocol-version` (corretto), poi 403 "requires a valid credit card" → abbandonato.
 - Groq è dietro Cloudflare: lo User-Agent predefinito di Python viene bloccato (errore 1010) → ora mandiamo un User-Agent esplicito.
 - I log runtime di Vercel non sono leggibili dalla sessione (403) → endpoint `{"diag": url}` (protetto dal secret) per testare la pipeline sul server.
+- Groq gratuito: 8000 token/minuto per tutti i modelli di testo → riassunto a pezzi da 14k caratteri.
