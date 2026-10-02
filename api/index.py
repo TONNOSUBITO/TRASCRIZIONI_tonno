@@ -153,6 +153,23 @@ def process(msg, oidc):
         tg("editMessageText", chat_id=chat, message_id=status, text=f"❌ Errore: {str(e)[:500]}")
 
 
+def diag(url, oidc):
+    """Esegue la pipeline senza Telegram e riporta ogni passo (per i test)."""
+    out = {"oidc": bool(oidc)}
+    try:
+        from vercel.cache.context import get_context
+        out["wait_until"] = get_context().wait_until is not None
+        with tempfile.TemporaryDirectory() as tmp:
+            path, hint = download_url(url, tmp)
+            out["download"] = [path, os.path.getsize(path), hint]
+            text, lang, secs = transcribe(path, oidc)
+            out["transcribe"] = [text[:200], lang, secs]
+        out["summary"] = summarize(text, oidc, hint)
+    except Exception:
+        out["error"] = traceback.format_exc()[-1500:]
+    return out
+
+
 async def app(scope, receive, send):
     if scope["type"] != "http":
         return
@@ -164,10 +181,17 @@ async def app(scope, receive, send):
         if not m.get("more_body"):
             break
     ok = scope["method"] == "POST" and (not SECRET or headers.get("x-telegram-bot-api-secret-token") == SECRET)
+    data = json.loads(body or b"{}") if ok else {}
+    oidc = headers.get("x-vercel-oidc-token") or os.environ.get("VERCEL_OIDC_TOKEN", "")
+    if ok and "diag" in data:
+        out = json.dumps(await asyncio.to_thread(diag, data["diag"], oidc), ensure_ascii=False).encode()
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": out})
+        return
     if ok:
-        msg = json.loads(body or b"{}").get("message")
+        msg = data.get("message")
         if msg and (not ALLOWED or str(msg["chat"]["id"]) in ALLOWED):
-            oidc = headers.get("x-vercel-oidc-token") or os.environ.get("VERCEL_OIDC_TOKEN", "")
+            print("messaggio da chat", msg["chat"]["id"])
             job = asyncio.to_thread(process, msg, oidc)
             try:
                 from vercel.functions import wait_until
