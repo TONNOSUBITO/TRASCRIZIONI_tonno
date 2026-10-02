@@ -7,6 +7,7 @@ import os
 import re
 import tempfile
 import traceback
+import urllib.error
 import urllib.request
 import uuid
 import base64
@@ -28,8 +29,11 @@ MIME = {"m4a": "audio/mp4", "mp4": "video/mp4", "webm": "audio/webm", "ogg": "au
 
 def http(url, data=None, headers=None, timeout=240):
     req = urllib.request.Request(url, data=data, headers=headers or {})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read()
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"HTTP {e.code} da {url.split('/bot')[0]}: {e.read()[:400].decode(errors='replace')}") from None
 
 
 def tg(method, **params):
